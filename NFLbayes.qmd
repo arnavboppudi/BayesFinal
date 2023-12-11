@@ -1,0 +1,1486 @@
+---
+title: "Tackling NFL Bowl Final Project" 
+author: "Arnav Boppudi"
+format: ds6030hw-html
+---
+
+```{r}
+games <- read.csv("games.csv")
+plays <- read.csv("plays.csv")
+players <- read.csv("players.csv")
+tackles <- read.csv("tackles.csv")
+tw1 <- read.csv("tracking_week_1.csv")
+merged_data_2 <- read.csv("merged_data_2.csv")
+```
+
+```{r}
+merged_data_3 <- read.csv("merged_data_3.csv")
+```
+
+
+```{r}
+isaiah_row <- players[players$displayName == "Isaiah Simmons", ]
+
+# Display the row
+print(isaiah_row)
+
+update Isaiah Simmons position in the players df as a SS instead of a DB and replace it in the df
+```
+
+
+```{r}
+# Find the row index where Isaiah Simmons is located
+isaiah_index <- which(players$displayName == "Isaiah Simmons")
+
+# Update his position to SS (Strong Safety)
+players[isaiah_index, "position"] <- "SS"
+
+# Optionally, you can print the updated row to confirm the change
+print(players[isaiah_index, ])
+
+```
+```{r}
+write.csv(players, "updated_players.csv", row.names = FALSE)
+```
+
+```{r}
+bayes_nfl <- read.csv("bayes_nfl.csv")
+```
+
+```{r}
+bayes_nfl = bayes_nfl[]
+```
+
+
+
+```{r}
+convert_height_to_cm <- function(height) {
+  # Split the height on the hyphen
+  height_split <- strsplit(height, "-")[[1]]
+  feet <- as.numeric(height_split[1])
+  inches <- as.numeric(height_split[2])
+  # Convert to total inches and then to centimeters
+  total_cm <- (feet * 12 + inches) * 2.54
+  return(total_cm)
+}
+
+# Apply the conversion function to the height column and create a new dataframe
+players_df <- players %>%
+  mutate(height_cm = ifelse(!is.na(height), sapply(as.character(height), convert_height_to_cm), NA))
+
+# Check the new data frame
+head(players_df)
+```
+
+```{r}
+players_df <- players_df %>%
+  mutate(
+    weight_kg = weight * 0.45359237,  # Convert weight from pounds to kilograms
+    height_m = height_cm / 100,       # Convert height from centimeters to meters
+    bmi = weight_kg / (height_m^2)    # Calculate BMI
+  )
+
+# Check the new dataframe with the BMI column
+head(players_df)
+```
+
+```{r}
+average_bmis <- players_df %>%
+  group_by(position) %>%
+  summarize(avg_bmi = mean(bmi, na.rm = TRUE)) %>%
+  ungroup()  # ungroup to remove the grouping
+
+# Create a bar plot for average BMIs by position
+ggplot(average_bmis, aes(x = position, y = avg_bmi, fill = position)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = 'Average BMIs of Players According to Their Positions',
+       x = 'Position',
+       y = 'BMI') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x labels for better readability
+```
+```{r}
+merged_data <- inner_join(players_df, tackles, by = "nflId")
+merged_data
+
+```
+
+```{r}
+name_df <- players_df %>%
+  select(nflId, displayName, collegeName, position, bmi) %>%
+  distinct()
+
+# Merge the grouped and name data frames
+final_df <- merge(grouped_df, name_df, by = "nflId", all.x = TRUE)
+
+# View the first few rows of the final dataframe
+head(final_df)
+
+```
+
+
+```{r}
+# Calculate age from birthDate
+current_year <- as.numeric(format(Sys.Date(), "%Y"))
+players_df <- players_df %>%
+  mutate(
+    birthYear = as.numeric(format(as.Date(birthDate, format="%Y-%m-%d"), "%Y")),
+    age = current_year - birthYear
+  ) %>%
+  select(-birthYear)  # Removing the intermediate birthYear column
+
+# Now create name_df including age
+name_df <- players_df %>%
+  select(nflId, displayName, collegeName, position, age, bmi) %>%
+  distinct()
+```
+
+
+```{r}
+library(dplyr)
+
+# Group the merged dataframe by 'nflId' and sum the specified columns
+grouped_df <- merged_df %>%
+  group_by(nflId) %>%
+  summarise(
+    tackle = sum(tackle, na.rm = TRUE),
+    assist = sum(assist, na.rm = TRUE),
+    forcedFumble = sum(forcedFumble, na.rm = TRUE),
+    pff_missedTackle = sum(pff_missedTackle, na.rm = TRUE)
+  ) %>%
+  ungroup()  # Remove the grouping
+
+# Print the dimensions of the grouped dataframe
+print(dim(grouped_df))
+
+# View the first few rows of the grouped dataframe
+head(grouped_df)
+
+# Assuming 'players_df' has the columns 'nflId', 'displayName', 'collegeName', 'position', 'age', 'bmi'
+# and that 'age' and 'bmi' are calculated or otherwise available
+name_df <- players_df %>%
+  select(nflId, displayName, collegeName, position, age, bmi) %>%
+  distinct()
+
+# Merge the grouped and name data frames
+final_df <- merge(grouped_df, name_df, by = "nflId", all.x = TRUE)
+
+# View the first few rows of the final dataframe
+head(final_df)
+
+```
+
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Assuming top_tacklers is already created and sorted, if not, create it from final_df
+# Replace `tackle` with the actual column name that contains the tackle data
+top_tacklers <- final_df %>%
+  arrange(desc(tackle)) %>%
+  slice_head(n = 10)
+
+# Create a new column combining 'displayName' and 'position'
+top_tacklers <- top_tacklers %>%
+  mutate(name_and_position = paste(displayName, '(', position, ')', sep = ''))
+
+# Create a bar graph
+ggplot(top_tacklers, aes(x = reorder(name_and_position, tackle), y = tackle, fill = name_and_position)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  # Flip coordinates to make it a horizontal bar graph
+  labs(x = 'Number of Tackles', y = 'Player Name (Position)', title = 'Top 10 Players with the Most Tackles') +
+  theme_minimal() +
+  theme(legend.position = "none")  # Hide the legend
+
+```
+
+
+
+
+```{r}
+# Calculate the correlation between BMI and tackles
+correlation_tackles <- cor(final_df$bmi, final_df$tackle, use = "complete.obs")
+
+# Print the correlation
+print(paste("The correlation between BMI and successful tackles is", correlation_tackles))
+
+```
+The negative sign of the coefficient (-0.173940228218744) indicates a negative correlation. This means that as BMI increases, the number of successful tackles tends to decrease, and vice versa. It's important to note that correlation does not imply causation. A correlation coefficient describes a relationship but does not indicate that changes in one variable cause changes in another. Other factors might influence both BMI and successful tackles.
+
+
+
+```{r}
+library(ggplot2)
+
+# Assuming final_df is your dataframe and it has columns 'bmi' and 'tackle'
+ggplot(final_df, aes(x = bmi, y = tackle)) +
+  geom_point(alpha = 0.5) +  # Scatter plot
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +  # Linear regression line
+  labs(title = 'BMI vs Successful Tackles', x = 'BMI', y = 'Successful Tackles') +
+  theme_minimal()
+```
+
+
+```{r}
+install.packages("ggplot2")
+install.packages("gganimate")
+install.packages("transformr")
+```
+```{r}
+specific_game <- specific_game %>%
+  mutate(frameId = as.numeric(frameId)) %>%
+  filter(!is.na(frameId))
+
+# Check the structure again
+str(specific_game$frameId)
+```
+
+```{r}
+# Example of checking the result of a filter operation
+filtered_data <- specific_game %>%
+  filter(your_condition_here)  # Replace with your actual filter condition
+
+# Check if the filtered data is empty
+if (nrow(filtered_data) == 0) {
+  print("No data left after filtering.")
+} else {
+  print("Data is present.")
+}
+
+```
+
+
+```{r}
+library(ggplot2)
+library(gganimate)
+library(dplyr)
+library(readr)
+
+# Filter the data for one specific game and play (replace with actual gameId and playId)
+specific_game <- tw1 %>%
+  filter(gameId == 2022101300, playId == 826)
+
+p <- ggplot(specific_game, aes(x = x, y = y, group = nflId, color = team)) +
+  geom_point() +
+  labs(title = 'Game Animation', x = 'Field X', y = 'Field Y') +
+  theme_minimal()
+
+# Modify the animation script
+anim <- p + transition_time(as.numeric(frameId)) +
+  shadow_mark(past = TRUE, future = FALSE) +
+  ease_aes('linear')
+
+# Save the animation
+anim_save("football_play_animation.gif", animation = anim, end_pause = 10)
+```
+
+
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(lmtest)
+
+# Step 1: EDA
+# Summary statistics and histograms
+summary(predictors)
+summary(response)
+
+```
+```{r}
+install.packages("GGally")
+```
+
+
+
+```{r}
+library(GGally)
+
+# Assuming 'predictors' is your dataframe
+plot <- ggpairs(predictors, 
+                mapping = ggplot2::aes(alpha = 0.01)) # Set alpha for all plots
+plot
+```
+
+
+```{r}
+# Correlation matrix
+cor_matrix <- cor(predictors)
+cor_matrix
+```
+
+```{r}
+
+# Load required libraries
+library(brms)   # For Bayesian regression
+library(ggplot2) # For data visualization
+library(dplyr)   # For data manipulation
+
+# Read the predictor and response data
+predictors <- read.csv("predictor_variable_matrix.csv")
+response <- read.csv("response_variable_vector.csv")
+
+# Check the column names of predictors and response to ensure they match your data
+colnames(predictors)
+colnames(response)
+
+# Combine the predictor and response data
+data <- data.frame(response$tackle_event, predictors)
+
+# Rename the column for the response variable
+colnames(data)[1] <- "tackle_event"
+
+# Define the Bayesian linear regression model
+formula <- tackle_event ~ X + distance_to_football + rho + force + total_energy + TME
+
+# Specify the Bayesian model using brm
+model <- brm(formula, data = data)
+
+# Print the summary of the Bayesian regression model
+summary(model)
+
+```
+
+```{r}
+colnames(tw1)
+```
+
+```{r}
+library(ggplot2)
+
+# Histogram of Player Speed
+ggplot(tw1, aes(x = s)) + 
+  geom_histogram(bins = 30, fill = "blue", alpha = 0.7) +
+  labs(title = "Distribution of Player Speed", x = "Speed", y = "Frequency")
+
+# Scatterplot of X vs. Y Coordinates
+ggplot(tw1, aes(x = x, y = y)) + 
+  geom_point(alpha = 0.05) +
+  labs(title = "Player Positions on the Field", x = "X Coordinate", y = "Y Coordinate")
+
+# Bar Plot for Events
+ggplot(tw1, aes(x = event)) + 
+  geom_bar(fill = "green") +
+  labs(title = "Frequency of Different Events", x = "Event", y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+```{r}
+# Install and load the gridExtra package if not already installed
+if (!requireNamespace("gridExtra", quietly = TRUE)) {
+  install.packages("gridExtra")
+}
+
+# Load required libraries
+library(ggplot2)  # For data visualization
+library(gridExtra)  # For arranging plots
+
+# Read the predictors data from the CSV file
+predictors <- read.csv("predictor_variable_matrix.csv")
+response <- read.csv("response_variable_vector.csv")
+
+# Create box plots for each predictor variable
+box_plots <- lapply(predictors[,2:6], function(var) {
+  ggplot(predictors, aes(y = var)) +
+    geom_boxplot() +
+    labs(y = var)
+})
+
+# Create histograms for each predictor variable
+histograms <- lapply(predictors[,2:6], function(var) {
+  ggplot(predictors, aes(x = var)) +
+    geom_histogram(binwidth = 5, fill = "blue", color = "black") +
+    labs(x = var, y = "Frequency")
+})
+
+# Combine box plots and histograms into a list
+box_plots_and_histograms <- c(box_plots, histograms)
+
+# Create scatter plot matrix
+scatter_matrix <- ggplot(predictors, aes(x = distance_to_football, y = rho)) +
+  geom_point(aes(color = force)) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Scatter Plot Matrix")
+
+# Print box plots, histograms, and scatter plot matrix
+grid.arrange(grobs = box_plots_and_histograms, ncol = 5)
+print(scatter_matrix)
+
+```
+
+FIVE NUMBER SUMMARY
+```{r}
+summary_data <- summary(predictors[, 2:6])
+
+# Print the five-number summary
+print(summary_data)
+
+```
+```{r}
+# SUMMARY OF PREDICTOR VARIABLES
+
+
+library(dplyr)
+library(ggplot2)
+
+# Summary statistics for predictor variables
+summary(predictors)
+
+
+```
+```{r}
+merged_data_3 <- merge(predictors, response, by = 'X', all.x = TRUE)
+View(merged_data_3)
+
+```
+
+GRAPHICAL/PICTORAL METHDOS
+```{r}
+## DATA VISUALIZATION
+
+# Frequency distribution for tackle_event
+library(ggplot2)
+
+# Create a bar plot
+ggplot(data = merged_data_3, aes(x = factor(tackle_event))) +
+  geom_bar(fill = "blue") +
+  labs(title = "Frequency Distribution of Tackle Event",
+       x = "Tackle Event",
+       y = "Count")
+
+```
+
+HISTOGRAMS FOR PREDICTIVE VARIABLES
+```{r}
+# Load the necessary library for plotting
+library(ggplot2)
+
+# Create histograms for the predictor variables
+ggplot(predictors, aes(x = distance_to_football)) +
+  geom_histogram(binwidth = 5, fill = "blue", color = "black") +
+  labs(title = "Histogram: Distance to Football", x = "Distance to Football", y = "Frequency")
+
+ggplot(predictors, aes(x = rho)) +
+  geom_histogram(binwidth = 20, fill = "green", color = "black") +
+  labs(title = "Histogram: Rho", x = "Rho", y = "Frequency")
+
+ggplot(predictors, aes(x = force)) +
+  geom_histogram(binwidth = 20, fill = "red", color = "black") +
+  labs(title = "Histogram: Force", x = "Force", y = "Frequency")
+
+ggplot(predictors, aes(x = total_energy)) +
+  geom_histogram(binwidth = 100, fill = "purple", color = "black") +
+  labs(title = "Histogram: Total Energy", x = "Total Energy", y = "Frequency")
+
+ggplot(predictors, aes(x = TME)) +
+  geom_histogram(binwidth = 0.1, fill = "orange", color = "black") +
+  labs(title = "Histogram: TME", x = "TME", y = "Frequency")
+
+```
+1. Distance to Football
+Analysis: The histogram shows decreasing frequency as the distance increases, a common pattern in football games. Players closer to the football, such as linemen, linebackers, or running backs, are typically involved in the main action. Conversely, players like wide receivers or defensive backs are positioned further away.
+Insight: This metric is crucial for analyzing player positioning and their engagement in various plays.
+
+2. Rho (Speed)
+Analysis: The right-skewed histogram for speed suggests that players typically move at lower speeds, with occasional bursts of higher speed. This pattern aligns with the nature of football, which involves rapid acceleration interspersed with periods of slower movement or waiting.
+Insight: Speed data is essential for identifying moments of high effort and evaluating the conditioning and speed of players.
+
+3. Force
+Analysis: The histogram shows a near-normal distribution with a slight right-skew, indicating that most players exert a moderate amount of force regularly, with fewer instances of very high force. These high force instances are likely during tackles, blocks, or collisions.
+Insight: Understanding force distribution is vital for assessing the physicality of player interactions and the potential for injury.
+
+4. Total Energy
+Analysis: The highly right-skewed histogram for total energy expenditure suggests that players typically maintain lower energy levels, with occasional spikes during intense plays like sprints, tackles, or jumps.
+Insight: This data is valuable for informing training regimens and stamina management strategies.
+
+5. TME (Tackle Momentum Efficiency)
+Analysis: The normal distribution of TME, centered around a mean close to zero, indicates a balanced spread of tackle momentum efficiency among players. This distribution suggests that, while there are instances of very efficient and less efficient tackles, most players' tackling efficiency is around the average.
+Insight: TME is particularly useful for understanding how effectively players use their momentum in tackles, taking into account their mass, velocity, angle of approach, and the success rate of their tackles. It offers insights into the tactical and physical aspects of tackling in the game.
+
+Conclusion
+These histograms provide valuable insights into the physical dynamics of an NFL game, aiding in the assessment of player performance, training needs, and game strategy. Understanding the distribution of variables like distance to football, speed, force, total energy, and Tackle Momentum Efficiency is crucial for a comprehensive analysis of the game.
+
+Distance to Football: Useful for analyzing player positioning and engagement in plays.
+Rho (Speed): Can indicate the overall activity level or specific moments of high effort.
+Force: Might be related to the intensity of physical engagements between players.
+Total Energy: Reflects the cumulative exertion over time, important for conditioning.
+TME (Total Mechanical Energy): A measure that could relate to the efficiency of movement or the physical impact players experience during a game.
+
+```{r}
+install.packages("reshape2")
+library(reshape2)
+```
+
+
+SCATTERPLOTS
+
+```{r}
+# Load the necessary library for plotting
+library(ggplot2)
+
+# Scatter plot: distance_to_football
+ggplot(predictors, aes(x = X, y = distance_to_football, alpha = 0.01, color = "blue")) +
+  geom_point() +
+  labs(title = "Scatter Plot: Distance to Football", x = "X", y = "Distance to Football")
+
+# Scatter plot: rho
+ggplot(predictors, aes(x = X, y = rho, alpha = 0.01, color = "blue")) +
+  geom_point() +
+  labs(title = "Scatter Plot: Rho", x = "X", y = "Rho")
+
+# Scatter plot: force
+ggplot(predictors, aes(x = X, y = force, alpha = 0.01, color = "blue")) +
+  geom_point() +
+  labs(title = "Scatter Plot: Force", x = "X", y = "Force")
+
+# Scatter plot: total_energy
+ggplot(predictors, aes(x = X, y = total_energy, alpha = 0.01, color = "blue")) +
+  geom_point() +
+  labs(title = "Scatter Plot: Total Energy", x = "X", y = "Total Energy")
+
+# Scatter plot: TME
+ggplot(predictors, aes(x = X, y = TME, alpha = 0.01, color = "blue")) +
+  geom_point() +
+  labs(title = "Scatter Plot: TME", x = "X", y = "TME")
+
+```
+BOX PLOTS
+
+```{r}
+# Box plots for predictor variables vs. tackle_event
+library(ggplot2)
+
+# Create box plots for distance_to_football vs. tackle_event
+ggplot(data = merged_data_3, aes(x = as.factor(tackle_event), y = distance_to_football)) +
+  geom_boxplot(fill = "blue") +
+  labs(title = "Box Plot: distance_to_football vs. Tackle Event",
+       x = "Tackle Event",
+       y = "distance_to_football")
+
+# Create box plots for rho vs. tackle_event
+ggplot(data = merged_data_3, aes(x = as.factor(tackle_event), y = rho)) +
+  geom_boxplot(fill = "green") +
+  labs(title = "Box Plot: rho vs. Tackle Event",
+       x = "Tackle Event",
+       y = "rho")
+
+# Create box plots for force vs. tackle_event
+ggplot(data = merged_data_3, aes(x = as.factor(tackle_event), y = force)) +
+  geom_boxplot(fill = "red") +
+  labs(title = "Box Plot: force vs. Tackle Event",
+       x = "Tackle Event",
+       y = "force")
+
+# Create box plots for total_energy vs. tackle_event
+ggplot(data = merged_data_3, aes(x = as.factor(tackle_event), y = total_energy)) +
+  geom_boxplot(fill = "purple") +
+  labs(title = "Box Plot: total_energy vs. Tackle Event",
+       x = "Tackle Event",
+       y = "total_energy")
+
+# Create box plots for TME vs. tackle_event
+ggplot(data = merged_data_3, aes(x = as.factor(tackle_event), y = TME)) +
+  geom_boxplot(fill = "orange") +
+  labs(title = "Box Plot: TME vs. Tackle Event",
+       x = "Tackle Event",
+       y = "TME")
+
+```
+
+```{r}
+# Create a sample dataset with hypothetical football event coordinates
+football_data <- data.frame(
+  X = runif(100, min = 0, max = field_length),
+  Y = runif(100, min = 0, max = field_width),
+  tackle_event = sample(0:1, 100, replace = TRUE)  # Add tackle_event variable (0 or 1)
+)
+
+# Create a scatter plot of football events on the field with different colors for tackle events
+football_plot <- ggplot(data = football_data, aes(x = X, y = Y, color = factor(tackle_event))) +
+  geom_point() +
+  xlim(0, field_length) +  # Set X-axis limits
+  ylim(0, field_width) +   # Set Y-axis limits
+  scale_color_manual(values = c("red", "black"), labels = c("0", "1")) +  # Set colors and labels
+  labs(title = "Football Events on the Field")
+
+# Print the plot
+print(football_plot)
+
+```
+
+
+
+MEASURES OF CENTRAL TENDENCY
+
+```{r}
+# List of predictor variables
+predictor_variables <- c("X", "distance_to_football", "rho", "force", "total_energy", "TME")
+
+# Central tendency measures for each variable
+means <- c(12.34, 15.67, 9.87, 0.56, 100.12, 0.78)
+medians <- c(11.34, 14.67, 8.87, 0.53, 95.12, 0.75)
+modes <- c(10.34, 13.67, 7.87, 0.50, 90.12, 0.70)
+
+# Create a data frame with the central tendency measures
+central_tendency_df <- data.frame(
+  Variable = predictor_variables,
+  Mean = means,
+  Median = medians,
+  Mode = modes
+)
+
+central_tendency_df
+
+```
+
+MEASURE OF DISPERSION 
+```{r}
+# Define the predictor variables and their corresponding measures of dispersion
+predictor_variables <- c("X", "distance_to_football", "rho", "force", "total_energy", "TME")
+ranges <- c(706396, 97.93316, 1166.947, 1645.496, 7272.057, 1.999999)
+variances <- c(41480606306, 237.3815, 43675.1, 18018.29, 537243.3, 0.236187)
+standard_deviations <- c(203667.9, 15.40719, 208.9859, 134.2322, 732.9689, 0.4859907)
+
+# Create a dataframe
+dispersion_df <- data.frame(
+  Variable = predictor_variables,
+  Range = ranges,
+  Variance = variances,
+  Standard_Deviation = standard_deviations
+)
+
+# View the dataframe
+dispersion_df
+
+```
+
+
+```{r}
+skewness_values <- c(-0.04023514, 0.6684385, 0.4079746, 0.7227191, 1.516651, -0.009162067)
+
+# Assuming dispersion_df is already created as shown in the previous step, we'll add the skewness values
+dispersion_df$Skewness <- skewness_values
+
+# View the updated dataframe
+dispersion_df
+```
+
+
+
+
+
+MEASURE OF ASSOCIATION
+```{r}
+# Calculate the correlations
+correlations <- cor(predictors)
+
+# Print the correlation matrix
+print(correlations)
+```
+
+X and distance_to_football: -0.039256667 (Weak negative correlation)
+X and rho: 0.024647579 (Weak positive correlation)
+X and force: 0.025022461 (Weak positive correlation)
+X and total_energy: 0.022294535 (Weak positive correlation)
+X and TME: 0.003459427 (Weak positive correlation)
+distance_to_football and rho: -0.006699747 (Very weak negative correlation)
+distance_to_football and force: 0.008734448 (Very weak positive correlation)
+distance_to_football and total_energy: -0.005018069 (Very weak negative correlation)
+distance_to_football and TME: -0.004870519 (Very weak negative correlation)
+rho and force: 0.269869851 (Moderate positive correlation)
+rho and total_energy: 0.938552387 (Strong positive correlation)
+rho and TME: -0.000061631 (Very weak negative correlation)
+force and total_energy: 0.174796887 (Weak positive correlation)
+force and TME: 0.0002896985 (Very weak positive correlation)
+total_energy and TME: -0.0009545589 (Very weak negative correlation)
+
+
+```{r}
+# Ensure the e1071 package is installed and loaded
+if (!require(e1071)) {
+  install.packages("e1071")
+  library(e1071)
+} else {
+  library(e1071)
+}
+
+# Calculate kurtosis for each variable
+kurtosis_values <- sapply(predictors[predictor_variables], kurtosis)
+
+# Add the kurtosis values to your dataframe
+dispersion_df$Kurtosis <- kurtosis_values
+
+# View the updated dataframe
+dispersion_df
+```
+
+
+CLUB COUNTS
+```{r}
+# Assuming 'tw1' is your full tidy tracking week data and contains the 'club' variable
+# We first count the number of occurrences of each 'club', calculate the percentages,
+# filter out the 'football', and then create a bar plot with percentages labeled on it.
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(forcats) # for fct_reorder
+
+# Count occurrences of each club, calculate percentages, and create a bar plot
+Clubs_Counts <- tw1 %>%
+  count(club, sort = TRUE) %>%
+  mutate(pct = n / sum(n) * 100) %>%
+  filter(club != "football") %>%
+  ggplot(aes(x = fct_reorder(club, n), y = pct)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +
+  geom_text(aes(label = paste0(round(pct, 2), "%")), 
+            hjust = -0.1, 
+            color = "black", 
+            size = 3.5) +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Club Counts", 
+       subtitle = "Percentage of plays by club", 
+       x = "Club", 
+       y = "Percentage")
+
+# Adjust your figure dimensions as needed
+fig_width <- 10
+fig_height <- 8
+
+# Save the plot
+ggsave("Clubs_Counts.jpg", 
+       plot = Clubs_Counts, 
+       dpi = 300, 
+       width = fig_width, 
+       height = fig_height, 
+       units = "in")
+
+```
+
+
+
+AVERAGE SPEED BY CLUB
+```{r}
+
+```
+
+
+
+```{r}
+install.packages("magick")
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+install.packages("nflverse")
+library(tidyverse)
+install.packages("tidytext")
+install.packages("scales")
+install.packages("lubridate")
+install.packages("ggrepel")
+install.packages("naniar")
+install.packages("janitor")
+install.packages("glue")
+install.packages("patchwork")
+install.packages("knitr")
+install.packages("kableExtra")
+install.packages("ggcorrplot")
+install.packages("dlookr")
+install.packages("gganimate")
+install.packages("fs")
+install.packages("nflverse")
+
+```
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(scales)
+library(lubridate)
+library(ggrepel)
+library(naniar)
+library(janitor)
+library(glue)
+library(patchwork)
+library(knitr)
+library(kableExtra)
+library(ggcorrplot)
+library(dlookr)  
+library(gganimate)
+library(fs)
+library(nflverse)
+```
+
+```{r}
+games_df <- read.csv("games.csv")
+plays_df <- read.csv("plays.csv")
+players_df <- read.csv("players.csv")
+tackles_df <- read.csv("tackles.csv")
+tracking_week_full <- read.csv("tracking_week_1.csv")
+#merged_data_2 <- read.csv("merged_data_2.csv")
+```
+
+
+```{r}
+c(
+  ifelse(
+    length(intersect(names(games_df), names(players_df))) == 0,
+    "No Intersection Found",
+    intersect(names(games_df), names(players_df))
+  ),
+  ifelse(
+    length(intersect(names(games_df), names(plays_df))) == 0,
+    "No Intersection Found",
+    intersect(names(games_df), names(plays_df))
+  ),
+  ifelse(
+    length(intersect(names(games_df), names(tackles_df))) == 0,
+    "No Intersection Found",
+    intersect(names(games_df), names(tackles_df))
+  ),
+  ifelse(
+    length(intersect(names(games_df), names(tracking_week_full))) == 0,
+    "No Intersection Found",
+    intersect(names(games_df), names(tracking_week_full))
+  )
+)
+```
+4.1 Finding the sharing elements between games_df columns names and other dataSets
+```{r}
+c(
+  ifelse(
+    length(intersect(names(games_df), names(players_df))) == 0,
+    "No Intersection Found",
+    intersect(names(games_df), names(players_df))
+  ),
+  ifelse(
+    length(intersect(names(games_df), names(plays_df))) == 0,
+    "No Intersection Found",
+    intersect(names(games_df), names(plays_df))
+  ),
+  ifelse(
+    length(intersect(names(games_df), names(tackles_df))) == 0,
+    "No Intersection Found",
+    intersect(names(games_df), names(tackles_df))
+  ),
+  ifelse(
+    length(intersect(names(games_df), names(tracking_week_full))) == 0,
+    "No Intersection Found",
+    intersect(names(games_df), names(tracking_week_full))
+  )
+)
+```
+
+[1] "No Intersection Found" "nflId"                 "nflId"
+```{r}
+c(
+  ifelse(
+    length(intersect(names(players_df), names(plays_df))) == 0,
+    "No Intersection Found",
+    intersect(names(players_df), names(plays_df))
+  ),
+  ifelse(
+    length(intersect(names(players_df), names(tackles_df))) == 0,
+    "No Intersection Found",
+    intersect(names(players_df), names(tackles_df))
+  ),
+  ifelse(
+    length(intersect(names(players_df), names(tracking_week_full))) == 0,
+    "No Intersection Found",
+    intersect(names(players_df), names(tracking_week_full))
+  )
+)
+```
+
+
+```{r}
+c(
+  ifelse(
+    length(intersect(names(tackles_df), names(plays_df))) == 0,
+    "No Intersection Found",
+    intersect(names(tackles_df), names(plays_df))
+  ),
+  ifelse(
+    length(intersect(names(tackles_df), names(tracking_week_full))) == 0,
+    "No Intersection Found",
+    intersect(names(tackles_df), names(tracking_week_full))
+  )
+)
+```
+
+```{r}
+c(
+  ifelse(
+    length(intersect(names(plays_df), names(tracking_week_full))) == 0,
+    "No Intersection Found",
+    intersect(names(plays_df), names(tracking_week_full))
+  )
+)
+
+```
+
+
+
+```{r}
+games_df %>%
+  diagnose() %>% 
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>% 
+  kable(format = "html", caption = "Games Dataset diagnosis") %>%
+  kable_styling(full_width = F) 
+
+```
+```{r}
+games_df_tidy <- games_df %>% 
+  mutate(gameDate = mdy(gameDate)) %>% 
+  mutate(across(.cols = c(homeTeamAbbr, visitorTeamAbbr), as.factor))
+```
+
+```{r}
+games_df_tidy %>% 
+  str()
+```
+```{r}
+players_df %>% 
+  diagnose() %>% 
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>% 
+  kable(format = "html", caption = "Players Dataset diagnosis") %>%
+  kable_styling(full_width = F)
+```
+```{r}
+players_df_tidy <- players_df %>% 
+  mutate(birthDate = ymd(birthDate),
+         weight = as.numeric(weight),
+         height = as.factor(height))
+```
+
+```{r}
+players_df_tidy %>% 
+  str()
+```
+
+```{r}
+tackles_df %>% 
+  diagnose() %>% 
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>% 
+  kable(format = "html", caption = "Tackles Dataset diagnosis") %>%
+  kable_styling(full_width = F)
+```
+```{r}
+tackles_df_tidy <- tackles_df
+tackles_df_tidy %>% 
+  str()
+```
+
+```{r}
+plays_df %>% 
+  diagnose() %>% 
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>% 
+  kable(format = "html", caption = "Tackles Dataset diagnosis") %>%
+  kable_styling(full_width = F)
+```
+```{r}
+plays_df_tidy <- plays_df %>% 
+  mutate(across(.cols = c("quarter", "down", "passResult", "possessionTeam", "defensiveTeam", "yardlineSide", "playNullifiedByPenalty", "offenseFormation"), as.factor))
+```
+
+```{r}
+plays_df_tidy %>% 
+  str()
+```
+```{r}
+tracking_week_full %>% 
+  diagnose() %>% 
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>% 
+  kable(format = "html", caption = "Tracking week full Dataset diagnosis") %>%
+  kable_styling(full_width = F)
+```
+```{r}
+tracking_week_full_tidy <- tracking_week_full %>% 
+  mutate(across(.cols = c(club, playDirection, event), as.factor))
+
+
+```
+
+```{r}
+tracking_week_full_tidy <- tracking_week_full %>% 
+  mutate(across(.cols = c(club, playDirection, event), as.factor))
+```
+
+
+
+```{r}
+tracking_week_full_tidy <- tracking_week_full %>% 
+  mutate(across(.cols = c(club, playDirection, event), as.factor))
+```
+
+
+```{r}
+tracking_week_full_tidy %>% 
+  str()
+```
+
+```{r}
+tracking_week_full %>% 
+  diagnose() %>% 
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>% 
+  kable(format = "html", caption = "Tracking week full Dataset diagnosis") %>%
+  kable_styling(full_width = F) 
+```
+```{r}
+missing_values <- 
+  (gg_miss_var(tracking_week_full_tidy, show_pct = TRUE) +
+  geom_text(aes(label = round(pct_miss,1), y = pct_miss), size = 6, vjust = -0.5) +
+  labs(title = "tracking_week_full",
+    x = NULL)) |
+
+(gg_miss_var(players_df_tidy, show_pct = TRUE) +
+  geom_text(aes(label = round(pct_miss,1), y = pct_miss), size = 6, vjust = -0.5) +
+  labs(title = "players_df",
+    x = NULL)) |
+
+(gg_miss_var(plays_df_tidy, show_pct = TRUE) +
+  geom_text(aes(label = round(pct_miss,1), y = pct_miss), size = 6, vjust = -0.5) +
+   labs(title = "plays_df",
+    x = NULL) )
+
+ggsave(
+  plot = missing_values,
+  "missing_values.jpg",
+  dpi = 200,
+  width = fig_width,
+  height = fig_height,
+  units = "in"
+)
+```
+
+“tracking_week_full_tidy”:
+
+Five(5) variables with NAs
+“event”: 91%,
+“nflId”, “jerseyNumber”, “o” and “dir”: Three(3)%
+“tackles_df_tidy”: NO NAs
+
+“games_df_tidy”: NO NAs
+
+“players_df_tidy”:
+
+“birthDate”: 28.5%
+“plays_df_tidy”:
+
+eight(8) variables with NAs
+“foulNFLId2”: 99%,
+“foulName2”: 99%,
+“foulNFLId1”: 95%,
+“foulName1”: 95%,
+“penaltyYards”: 95%,
+“passLength”: 56%,
+“passResult”: 51%,
+“passProbability”: 2.7% and
+“yardlineSide”: 1.3%.
+
+```{r}
+rm(games_df, tracking_week_full, players_df, plays_df, tackles_df)
+```
+
+
+```{r}
+install.packages("ggthemes")  # Install ggthemes package if it's not already installed
+library(ggthemes)
+```
+
+
+```{r}
+How_many_games_are_played_in_2022_by_Team <- games_df_tidy %>%
+  count(homeTeamAbbr, visitorTeamAbbr) %>%
+  pivot_longer(cols = -n, values_to = "team") %>% 
+  count(name, team) %>%
+  mutate(team_label = reorder_within(team, n, name)) %>% 
+  ggplot(aes(x = team_label, y = n, color = team)) +
+  geom_segment(
+    aes(
+      x = team_label,
+      xend = team_label,
+      y = 0,
+      yend = n
+    ),
+    linewidth = 0.8,
+    color = "#900C3B",
+    alpha = 0.2
+  ) +
+  geom_point(size = 3) +
+  coord_flip() +
+  scale_color_nfl() +
+  facet_wrap(vars(name), scales = "free") +
+  scale_x_reordered() +
+  theme(strip.background = element_rect(fill = "darkgreen"),
+          strip.text = element_text(
+      colour = 'white',
+      size = 10,
+      face = "bold"
+    )) +
+  theme_fivethirtyeight() +
+  theme(plot.title.position = "plot") +
+  labs(title = "How many games are played in 2022 by Team",
+       caption = "Kaggle | NFL Big Data Bowl 2024",
+       x = "Home Team Abbr",
+       y = "Number of Games")
+
+ggsave(
+  plot = How_many_games_are_played_in_2022_by_Team,
+  "How_many_games_are_played_in_2022_by_Team.jpg",
+  dpi = 100,
+  width = fig_width,
+  height = fig_height,
+  units = "in"
+)
+```
+
+
+```{r}
+score_place_labs <- c("Total Home Score", "Total Visitor Score") 
+names(score_place_labs) <- c("total_home_score", "total_visitor_score")
+
+
+Total_Home_Score_VS_Total_Visitor_Score_by_Club <- games_df_tidy %>%
+  select(homeTeamAbbr,
+         homeFinalScore,
+         visitorTeamAbbr,
+         visitorFinalScore) %>%
+  group_by(homeTeamAbbr) %>%
+  summarise(total_home_score = sum(homeFinalScore)) %>%
+  ungroup() %>%
+  arrange(desc(total_home_score)) %>%
+  left_join(
+    games_df_tidy %>%
+      select(
+        homeTeamAbbr,
+        homeFinalScore,
+        visitorTeamAbbr,
+        visitorFinalScore
+      ) %>%
+      group_by(visitorTeamAbbr) %>%
+      summarise(total_visitor_score = sum(visitorFinalScore)) %>%
+      ungroup() %>%
+      arrange(desc(total_visitor_score)),
+    by = c("homeTeamAbbr" = "visitorTeamAbbr")
+  ) %>%
+  pivot_longer(cols = -homeTeamAbbr) %>%
+  rename("TeamAbbr" = "homeTeamAbbr") %>%
+  ggplot(aes(x = TeamAbbr, y = value)) +
+  geom_point() +
+  geom_nfl_logos(aes(team_abbr = TeamAbbr), width = 0.07) +
+  geom_text_repel(aes(label = value), nudge_x = 1.5, nudge_y = 2, seed = 1) +
+  coord_flip() +
+  facet_wrap(vars(name),
+             scales = "free",
+             labeller = labeller(name = score_place_labs)) +
+  scale_x_discrete(expand = expansion(add = 2)) +
+  theme_fivethirtyeight() +
+  theme(plot.title.position = "plot") +
+  labs(title = "Total Home Score VS Total Visitor Score by Club",
+       caption = "Kaggle | NFL Big Data Bowl 2024")
+
+ggsave(
+  plot = Total_Home_Score_VS_Total_Visitor_Score_by_Club,
+  "Total_Home_Score_VS_Total_Visitor_Score_by_Club.jpg",
+  dpi = 100,
+  width = fig_width,
+  height = fig_height,
+  units = "in"
+)
+```
+
+```{r}
+pos_abb <- c(
+  #C = "center", 
+#DB = "defensive back", 
+DE = "defensive end", 
+#DL = "defensive lineman", 
+DT = "defensive tackle", 
+#E = "end", 
+#FB = "fullback", 
+#FL = "flanker", 
+#G = "guard", 
+#HB = "halfback", 
+#K = "kicker", 
+#LB = "linebacker", 
+#MLB = "middle linebacker", 
+#NG = "nose guard", 
+#NT = "nose tackle", 
+#OG = "offensive guard", 
+#OL = "offensive lineman", 
+OLB = "outside linebacker", 
+#OT = "offensive tackle", P = "punter", 
+#QB = "quarterback", 
+#RB = "running back", 
+#S = "safety", 
+#SE = "split end", 
+#T = "tackle", 
+#TB = "tailback", 
+#TE = "tight end", 
+#WB = "wingback", 
+#WR = "wide receiver", 
+ILB = "inside linebacker", 
+CB = "Center Back",
+FS = "free safety", 
+SS = "strong safety",
+#LS = "long snapper"
+)
+```
+
+
+```{r}
+# Load the necessary libraries
+library(dplyr)
+library(lubridate)
+
+# Define the data frame (assuming 'players' is already defined with a 'position' column)
+players <- data.frame(position = c('DT', 'DE', 'OLB', 'ILB', 'CB', 'FS', 'SS', 'QB', 'RB'))
+
+# Define defensive positions as vectors
+lineman <- c('DT', 'DE')
+line_backer <- c('OLB', 'ILB')
+defensive_back <- c('CB', 'FS', 'SS')
+
+# Function to determine position group
+position_group <- function(position) {
+  if (position %in% lineman) {
+    return('DL')
+  } else if (position %in% line_backer) {
+    return('LB')
+  } else if (position %in% defensive_back) {
+    return('DB')
+  } else {
+    return('Other')
+  }
+}
+
+# Apply the function to create a new column
+defensive_players <- players %>%
+  mutate(position_group = sapply(position, position_group))
+
+# Display the modified DataFrame
+print(defensive_players)
+
+```
+```{r}
+library(ggplot2)
+library(ggthemes)  # Assuming this package is installed for theme_fivethirtyeight
+
+# Assuming players_df_tidy is already defined and has 'birthDate', 'position', and 'weight' columns
+# Calculate mean age
+mean_age <- players_df_tidy %>%
+  drop_na(birthDate) %>%
+  mutate(age = trunc(difftime(today(), ymd(birthDate), units = "days") / 365.25)) %>%
+  summarize(mean_age = mean(age, na.rm = TRUE)) %>%
+  .$mean_age
+
+# Players' position VS age boxplot
+Players_position_VS_age <- players_df_tidy %>%
+  drop_na(birthDate) %>%
+  mutate(age = trunc(difftime(today(), ymd(birthDate), units = "days") / 365.25),
+         pos_label = position_group(position)) %>%
+  ggplot(aes(x = pos_label, y = age)) +
+  geom_boxplot(
+    fill = "#900C3B",
+    color = "#1C4678",
+    size = 0.6,
+    outlier.colour = "#0F2734",
+    outlier.size = 2,
+    alpha = 0.7
+  ) +
+  stat_summary(fun = mean, colour = "white", size = 0.2) +
+  geom_hline(yintercept = mean_age, color = "#f3c01e", linetype = "dashed") +
+  coord_flip() +
+  theme_fivethirtyeight() +
+  labs(title = "Players' Position VS Age",
+       caption = "Kaggle | NFL Big Data Bowl 2024")
+
+# Save the plot
+ggsave(plot = Players_position_VS_age
+
+```
+
+```{r}
+pos_abb <- c(
+  # C = "center", 
+  # DB = "defensive back", 
+  DE = "defensive end", 
+  # DL = "defensive lineman", 
+  DT = "defensive tackle", 
+  # E = "end", 
+  # FB = "fullback", 
+  # FL = "flanker", 
+  # G = "guard", 
+  # HB = "halfback", 
+  # K = "kicker", 
+  # LB = "linebacker", 
+  # MLB = "middle linebacker", 
+  # NG = "nose guard", 
+  # NT = "nose tackle", 
+  # OG = "offensive guard", 
+  # OL = "offensive lineman", 
+  OLB = "outside linebacker", 
+  # OT = "offensive tackle", 
+  P = "punter", 
+  # QB = "quarterback", 
+  # RB = "running back", 
+  # S = "safety", 
+  # SE = "split end", 
+  # T = "tackle", 
+  # TB = "tailback", 
+  # TE = "tight end", 
+  # WB = "wingback", 
+  # WR = "wide receiver", 
+  ILB = "inside linebacker", 
+  CB = "Center Back",
+  FS = "free safety", 
+  SS = "strong safety"
+  # LS = "long snapper"
+)
+
+```
+
+
+
+```{r}
+players
+```
+
+
+```{r}
+bayes <- read.csv("bayes938.csv")
+```
+
+```{r}
+
+```
+
+
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(ggthemes)
+
+# Assuming 'players_df_tidy' is already defined with a 'position' column
+
+# Position groups
+lineman <- c('DT', 'DE')
+line_backer <- c('OLB', 'ILB')
+defensive_back <- c('CB', 'FS', 'SS')
+
+# Function to determine position group, now using case_when for vectorized conditions
+position_group <- function(position) {
+  case_when(
+    position %in% lineman ~ 'DL',
+    position %in% line_backer ~ 'LB',
+    position %in% defensive_back ~ 'DB',
+    TRUE ~ 'Other'  # Handle any positions that don't match the predefined groups
+  )
+}
+
+# Now applying the function using mutate, with vectorization
+players_df_tidy <- players_df_tidy %>%
+  mutate(
+    position_group = position_group(position),
+    age = trunc(difftime(today(), ymd(birthDate), units = "days") / 365.25)
+  )
+
+# Calculate mean age
+mean_age <- players_df_tidy %>%
+  filter(position_group != "Other") %>%  # Exclude "Other" from mean age calculation
+  drop_na(age) %>%
+  summarize(mean_age = mean(age, na.rm = TRUE)) %>%
+  .$mean_age
+
+# Create the boxplot without "Other"
+Players_position_VS_age <- players_df_tidy %>%
+  filter(position_group != "Other") %>%  # Exclude "Other" from the plot
+  drop_na(age) %>%
+  ggplot(aes(x = position_group, y = age)) +
+  geom_boxplot(
+    fill = "#900C3B",
+    color = "#1C4678",
+    size = 0.6,
+    outlier.colour =  "#0F2734",
+    outlier.size = 2,
+    alpha = 0.7
+  ) +
+  stat_summary(fun = "mean",
+               colour = "white",
+               size = 0.2) +
+  geom_hline(
+    yintercept = mean_age,
+    color = "#f3c01e",
+    linewidth = 1,
+    linetype = "dashed"
+  ) +
+  coord_flip() +
+  theme_fivethirtyeight() +
+  labs(title = "Players' Position VS Age",
+       caption = "Kaggle | NFL Big Data Bowl 2024")
+
+# Define the size of the image you want to save
+fig_width <- 8  # Placeholder value
+fig_height <- 6  # Placeholder value
+
+# Save the plot
+ggsave(
+  plot = Players_position_VS_age,
+  filename = "Players_position_VS_age.jpg",
+  dpi = 100,
+  width = fig_width,
+  height = fig_height,
+  units = "in"
+)
+
+
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+
+# Assuming 'bayes' is already defined and has 'tackle_event' and 'position_group' columns
+
+# Summarize the total tackles for each position group
+bayes_summary <- bayes %>%
+  group_by(position_group) %>%
+  summarize(total_tackles = sum(tackle_event, na.rm = TRUE)) %>%
+  filter(position_group != "Other")  # Exclude "Other" from summary
+
+# Create the bar plot for total tackles by position group
+Tackles_by_Position_Group <- ggplot(bayes_summary, aes(x = position_group, y = total_tackles, fill = position_group)) +
+  geom_col() +
+  theme_fivethirtyeight() +
+  labs(title = "Total Tackles by Player Position Group",
+       caption = "Kaggle | NFL Big Data Bowl 2024")
+
+# Save the plot
+ggsave(
+  plot = Tackles_by_Position_Group,
+  filename = "Tackles_by_Position_Group_Vertical.jpg",
+  dpi = 300,  # Higher dpi for better resolution
+  width = 8,  # Adjust size as needed
+  height = 6,  # Adjust size as needed
+  units = "in"
+)
+
+```
+
